@@ -324,7 +324,7 @@ class AdjustingTraceExporter implements SpanExporter {
     return spans.map((span) => {
       this.tickTelemetry(span);
 
-      // span = this.redactInputOutput(span);
+      span = this.redactInputOutput(span);
       span = this.markErrorSpanAsError(span);
       span = this.markFailedSpan(span);
       span = this.markGenkitFeature(span);
