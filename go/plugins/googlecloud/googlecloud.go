@@ -419,17 +419,18 @@ func (e *AdjustingTraceExporter) redactInputOutput(span sdktrace.ReadOnlySpan) s
 	return &spanWithModifiedAttributes{
 		ReadOnlySpan: span,
 		modifyFunc: func(attrs []attribute.KeyValue) []attribute.KeyValue {
-			var newAttrs []attribute.KeyValue
-			for _, attr := range attrs {
-				if attr.Key == "genkit:input" {
-					newAttrs = append(newAttrs, attribute.String("genkit:input", "<redacted>"))
-				} else if attr.Key == "genkit:output" {
-					newAttrs = append(newAttrs, attribute.String("genkit:output", "<redacted>"))
-				} else {
-					newAttrs = append(newAttrs, attr)
-				}
-			}
-			return newAttrs
+			// var newAttrs []attribute.KeyValue
+			// for _, attr := range attrs {
+			// 	if attr.Key == "genkit:input" {
+			// 		newAttrs = append(newAttrs, attribute.String("genkit:input", "<redacted>"))
+			// 	} else if attr.Key == "genkit:output" {
+			// 		newAttrs = append(newAttrs, attribute.String("genkit:output", "<redacted>"))
+			// 	} else {
+			// 		newAttrs = append(newAttrs, attr)
+			// 	}
+			// }
+			// return newAttrs
+			return attrs
 		},
 	}
 }
