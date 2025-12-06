@@ -360,10 +360,20 @@ func GenerateWithRequest(ctx context.Context, r api.Registry, opts *GenerateActi
 			}
 
 			if formatHandler != nil {
+				msg := resp.Message
 				resp.Message, err = formatHandler.ParseMessage(resp.Message)
 				if err != nil {
 					logger.FromContext(ctx).Debug("model failed to generate output matching expected schema", "error", err.Error())
-					return nil, core.NewError(core.INTERNAL, "model failed to generate output matching expected schema: %v", err)
+					gerr := core.NewError(core.INTERNAL, "model failed to generate output matching expected schema: %v", err)
+					if gerr.Details == nil {
+						gerr.Details = map[string]any{
+							"message": msg,
+						}
+					} else {
+						gerr.Details["message"] = msg
+					}
+
+					return nil, gerr
 				}
 			}
 
