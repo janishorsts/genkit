@@ -16,8 +16,11 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
+import type { CacheControlEphemeral } from '@anthropic-ai/sdk/resources/messages';
 import { z } from 'genkit';
 import { GenerationCommonConfigSchema } from 'genkit/model';
+
+export type { CacheControlEphemeral as AnthropicCacheControl };
 
 /**
  * Internal symbol for dependency injection in tests.
@@ -31,7 +34,6 @@ export const __testClient = Symbol('testClient');
  */
 export interface PluginOptions {
   apiKey?: string;
-  cacheSystemPrompt?: boolean;
   /** Default API surface for all requests unless overridden per-request. */
   apiVersion?: 'stable' | 'beta';
 }
@@ -50,7 +52,6 @@ export interface InternalPluginOptions extends PluginOptions {
 interface ClaudeHelperParamsBase {
   name: string;
   client: Anthropic;
-  cacheSystemPrompt?: boolean;
   defaultApiVersion?: 'stable' | 'beta';
 }
 
@@ -67,47 +68,78 @@ export interface ClaudeRunnerParams extends ClaudeHelperParamsBase {}
 export const AnthropicBaseConfigSchema = GenerationCommonConfigSchema.extend({
   tool_choice: z
     .union([
-      z.object({
-        type: z.literal('auto'),
-      }),
-      z.object({
-        type: z.literal('any'),
-      }),
-      z.object({
-        type: z.literal('tool'),
-        name: z.string(),
-      }),
+      z
+        .object({
+          type: z.literal('auto'),
+        })
+        .passthrough(),
+      z
+        .object({
+          type: z.literal('any'),
+        })
+        .passthrough(),
+      z
+        .object({
+          type: z.literal('tool'),
+          name: z.string(),
+        })
+        .passthrough(),
     ])
+    .describe(
+      'The tool choice to use for the request. This can be used to specify the tool to use for the request. If not specified, the model will choose the tool to use.'
+    )
     .optional(),
   metadata: z
     .object({
       user_id: z.string().optional(),
     })
+    .describe('The metadata to include in the request.')
+    .passthrough()
     .optional(),
   /** Optional shorthand to pick API surface for this request. */
-  apiVersion: z.enum(['stable', 'beta']).optional(),
-});
+  apiVersion: z
+    .enum(['stable', 'beta'])
+    .optional()
+    .describe(
+      'The API version to use for the request. Both stable and beta features are available on the beta API surface.'
+    ),
+}).passthrough();
 
 export type AnthropicBaseConfigSchemaType = typeof AnthropicBaseConfigSchema;
 
 export const ThinkingConfigSchema = z
   .object({
     enabled: z.boolean().optional(),
-    budgetTokens: z.number().int().min(1_024).optional(),
+    budgetTokens: z.number().min(1_024).optional(),
   })
+  .passthrough()
+  .passthrough()
   .superRefine((value, ctx) => {
-    if (value.enabled && value.budgetTokens === undefined) {
+    if (!value.enabled) return;
+
+    if (value.budgetTokens === undefined) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['budgetTokens'],
         message: 'budgetTokens is required when thinking is enabled',
       });
+    } else if (
+      value.budgetTokens !== undefined &&
+      !Number.isInteger(value.budgetTokens)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['budgetTokens'],
+        message: 'budgetTokens must be an integer',
+      });
     }
   });
 
 export const AnthropicThinkingConfigSchema = AnthropicBaseConfigSchema.extend({
-  thinking: ThinkingConfigSchema.optional(),
-});
+  thinking: ThinkingConfigSchema.optional().describe(
+    'The thinking configuration to use for the request. Thinking is a feature that allows the model to think about the request and provide a better response.'
+  ),
+}).passthrough();
 
 export const AnthropicConfigSchema = AnthropicThinkingConfigSchema;
 
@@ -164,3 +196,96 @@ export function resolveBetaEnabled(
   if (pluginDefaultApiVersion === 'beta') return true;
   return false;
 }
+
+/** Plain text document source. */
+export interface AnthropicTextSource {
+  type: 'text';
+  data: string;
+  mediaType?: string;
+}
+
+/** Base64-encoded document source (e.g., PDF). */
+export interface AnthropicBase64Source {
+  type: 'base64';
+  data: string;
+  mediaType: string;
+}
+
+/** File reference source (from Files API). */
+export interface AnthropicFileSource {
+  type: 'file';
+  fileId: string;
+}
+
+/** Custom content blocks for granular citation control. */
+export interface AnthropicContentSource {
+  type: 'content';
+  content: Array<
+    | { type: 'text'; text: string }
+    | {
+        type: 'image';
+        source: { type: 'base64'; mediaType: string; data: string };
+      }
+  >;
+}
+
+/** URL source for PDFs. */
+export interface AnthropicURLSource {
+  type: 'url';
+  url: string;
+}
+
+/** Union of all document source types. */
+export type AnthropicDocumentSource =
+  | AnthropicTextSource
+  | AnthropicBase64Source
+  | AnthropicFileSource
+  | AnthropicContentSource
+  | AnthropicURLSource;
+
+/** Options for creating an Anthropic document with optional citations. */
+export interface AnthropicDocumentOptions {
+  source: AnthropicDocumentSource;
+  title?: string;
+  context?: string;
+  citations?: { enabled: boolean };
+}
+
+/** Citation from a plain text document (character indices). */
+export interface CharLocationCitation {
+  type: 'char_location';
+  citedText: string;
+  documentIndex: number;
+  documentTitle?: string;
+  fileId?: string;
+  startCharIndex: number;
+  endCharIndex: number;
+}
+
+/** Citation from a PDF document (page numbers). */
+export interface PageLocationCitation {
+  type: 'page_location';
+  citedText: string;
+  documentIndex: number;
+  documentTitle?: string;
+  fileId?: string;
+  startPageNumber: number;
+  endPageNumber: number;
+}
+
+/** Citation from a custom content document (block indices). */
+export interface ContentBlockLocationCitation {
+  type: 'content_block_location';
+  citedText: string;
+  documentIndex: number;
+  documentTitle?: string;
+  fileId?: string;
+  startBlockIndex: number;
+  endBlockIndex: number;
+}
+
+/** Union of all citation types for documents. */
+export type AnthropicCitation =
+  | CharLocationCitation
+  | PageLocationCitation
+  | ContentBlockLocationCitation;

@@ -14,8 +14,69 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""Firebase plugin for Genkit.
 
-"""Firebase Plugin for Genkit."""
+This plugin provides Firebase integrations for Genkit, including Firestore
+vector stores for RAG and Firebase telemetry export to Google Cloud.
+
+Overview:
+    The Firebase plugin enables:
+    - Firestore as a vector store for document retrieval (RAG)
+    - Telemetry export to Google Cloud Trace and Monitoring
+
+Key Components:
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ Component                    │ Purpose                                  │
+    ├──────────────────────────────┼──────────────────────────────────────────┤
+    │ define_firestore_vector_store│ Create a Firestore-backed vector store   │
+    │ add_firebase_telemetry()     │ Enable Cloud Trace/Monitoring export     │
+    └──────────────────────────────┴──────────────────────────────────────────┘
+
+Example:
+    Using Firestore vector store:
+
+    ```python
+    from genkit import Genkit
+    from genkit.plugins.firebase import define_firestore_vector_store
+
+    ai = Genkit(...)
+
+    # Define a Firestore vector store
+    store = define_firestore_vector_store(
+        ai,
+        name='my_store',
+        collection='documents',
+        embedder='vertexai/text-embedding-005',
+    )
+
+    # Index documents
+    await ai.index(indexer=store.indexer, documents=[...])
+
+    # Retrieve documents
+    docs = await ai.retrieve(retriever=store.retriever, query='...')
+    ```
+
+    Enabling telemetry:
+
+    ```python
+    from genkit.plugins.firebase import add_firebase_telemetry
+
+    # Export traces to Cloud Trace (disabled in dev mode by default)
+    add_firebase_telemetry()
+    ```
+
+Caveats:
+    - Requires firebase-admin SDK and Google Cloud credentials
+    - Telemetry is disabled by default in development mode (GENKIT_ENV=dev)
+
+See Also:
+    - Firestore: https://firebase.google.com/docs/firestore
+    - Genkit documentation: https://genkit.dev/
+"""
+
+from genkit.plugins.google_cloud.telemetry.tracing import add_gcp_telemetry
+
+from .firestore import define_firestore_vector_store
 
 
 def package_name() -> str:
@@ -27,4 +88,17 @@ def package_name() -> str:
     return 'genkit.plugins.firebase'
 
 
-__all__ = ['package_name']
+def add_firebase_telemetry() -> None:
+    """Add Firebase telemetry export to Google Cloud Observability.
+
+    Exports traces to Cloud Trace and metrics to Cloud Monitoring.
+    In development (GENKIT_ENV=dev), telemetry is disabled by default.
+    """
+    add_gcp_telemetry(force_export=False)
+
+
+__all__ = [
+    'package_name',
+    'add_firebase_telemetry',
+    'define_firestore_vector_store',
+]

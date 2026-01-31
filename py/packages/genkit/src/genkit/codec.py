@@ -14,16 +14,61 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Encoding/decoding functions."""
+"""Encoding and decoding utilities for the Genkit framework.
 
+This module provides functions for serializing Genkit objects to dictionaries
+and JSON strings, with special handling for Pydantic models and binary data.
+
+Overview:
+    Genkit uses Pydantic models extensively for type safety. This module
+    provides utilities to convert these models to dictionaries and JSON
+    strings for serialization, API responses, and debugging.
+
+Key Functions:
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ Function          │ Purpose                                             │
+    ├───────────────────┼─────────────────────────────────────────────────────┤
+    │ dump_dict()       │ Convert Pydantic model to dict (exclude_none=True)  │
+    │ dump_json()       │ Convert object to JSON string with alias support    │
+    │ default_serializer│ Fallback serializer for non-standard types (bytes)  │
+    └───────────────────┴─────────────────────────────────────────────────────┘
+
+Example:
+    Converting Pydantic models:
+
+    ```python
+    from genkit.codec import dump_dict, dump_json
+    from genkit.types import Message, Part, TextPart
+
+    msg = Message(role='user', content=[Part(root=TextPart(text='Hello'))])
+
+    # Convert to dict (excludes None values, uses aliases)
+    msg_dict = dump_dict(msg)
+    # {'role': 'user', 'content': [{'text': 'Hello'}]}
+
+    # Convert to JSON string
+    msg_json = dump_json(msg, indent=2)
+    # '{"role": "user", "content": [{"text": "Hello"}]}'
+    ```
+
+Caveats:
+    - Pydantic models use by_alias=True for JSON Schema compatibility
+    - None values are excluded from output (exclude_none=True)
+    - Binary data (bytes) is base64-encoded when serializing
+
+See Also:
+    - Pydantic documentation: https://docs.pydantic.dev/
+    - genkit.core.typing: Core type definitions using Pydantic
+"""
+
+import base64
 import json
 from collections.abc import Callable
-from typing import Any
 
 from pydantic import BaseModel
 
 
-def dump_dict(obj: Any, fallback: Callable[[Any], Any] | None = None):
+def dump_dict(obj: object, fallback: Callable[[object], object] | None = None) -> object:
     """Converts an object or Pydantic to a dictionary.
 
     If the input object is a Pydantic BaseModel, it returns a dictionary
@@ -45,7 +90,28 @@ def dump_dict(obj: Any, fallback: Callable[[Any], Any] | None = None):
         return obj
 
 
-def dump_json(obj: Any, indent=None, fallback: Callable[[Any], Any] | None = None) -> str:
+def default_serializer(obj: object) -> object:
+    """Default serializer for objects not handled by json.dumps.
+
+    Args:
+        obj: The object to serialize.
+
+    Returns:
+        A serializable representation of the object.
+    """
+    if isinstance(obj, bytes):
+        try:
+            return base64.b64encode(obj).decode('utf-8')
+        except Exception:
+            return '<bytes>'
+    return str(obj)
+
+
+def dump_json(
+    obj: object,
+    indent: int | None = None,
+    fallback: Callable[[object], object] | None = None,
+) -> str:
     """Dumps an object to a JSON string.
 
     If the object is a Pydantic BaseModel, it will be dumped using the
@@ -63,4 +129,4 @@ def dump_json(obj: Any, indent=None, fallback: Callable[[Any], Any] | None = Non
     if isinstance(obj, BaseModel):
         return obj.model_dump_json(by_alias=True, exclude_none=True, indent=indent, fallback=fallback)
     else:
-        return json.dumps(obj, indent=indent, default=fallback)
+        return json.dumps(obj, indent=indent, default=fallback or default_serializer)

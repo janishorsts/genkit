@@ -190,11 +190,11 @@ describe('Anthropic Plugin', () => {
     assert.ok(experimentalMetadata, 'Experimental model metadata should exist');
 
     // Verify mock was called
-    const listStub = mockClient.models.list as any;
+    const listStub = mockClient.beta.models.list as any;
     assert.strictEqual(
       listStub.mock.calls.length,
       1,
-      'models.list should be called once'
+      'beta.models.list should be called once'
     );
   });
 
@@ -224,11 +224,11 @@ describe('Anthropic Plugin', () => {
     );
 
     // Verify models.list was only called once due to caching
-    const listStub = mockClient.models.list as any;
+    const listStub = mockClient.beta.models.list as any;
     assert.strictEqual(
       listStub.mock.calls.length,
       1,
-      'models.list should only be called once due to caching'
+      'beta.models.list should only be called once due to caching'
     );
   });
 });
@@ -254,10 +254,9 @@ describe('Anthropic resolve helpers', () => {
     assert.strictEqual(referenceAny.config?.temperature, 0.25);
   });
 
-  it('should apply system prompt caching when cacheSystemPrompt is true', async () => {
+  it('should apply system prompt caching when caching is enabled', async () => {
     const mockClient = createMockAnthropicClient();
     const plugin = anthropic({
-      cacheSystemPrompt: true,
       [__testClient]: mockClient,
     } as PluginOptions);
 
@@ -270,7 +269,12 @@ describe('Anthropic resolve helpers', () => {
         messages: [
           {
             role: 'system',
-            content: [{ text: 'You are helpful.' }],
+            content: [
+              {
+                text: 'You are helpful.',
+                metadata: { cache_control: { type: 'ephemeral', ttl: '5m' } },
+              },
+            ],
           },
         ],
       },
@@ -281,6 +285,6 @@ describe('Anthropic resolve helpers', () => {
     assert.strictEqual(createStub.mock.calls.length, 1);
     const requestBody = createStub.mock.calls[0].arguments[0];
     assert.ok(Array.isArray(requestBody.system));
-    assert.strictEqual(requestBody.system[0].cache_control.type, 'ephemeral');
+    assert.strictEqual(requestBody.system[0].cache_control?.type, 'ephemeral');
   });
 });

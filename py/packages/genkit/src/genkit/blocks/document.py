@@ -30,6 +30,8 @@ from genkit.core.typing import (
     DocumentPart,
     Embedding,
     Media,
+    MediaPart,
+    TextPart,
 )
 
 TEXT_DATA_TYPE: str = 'text'
@@ -83,7 +85,8 @@ class Document(DocumentData):
         Returns:
             A new Document instance containing a single text part.
         """
-        return Document(content=[DocumentPart(text=text)], metadata=metadata)
+        # NOTE: DocumentPart is a RootModel requiring root=TextPart(...) syntax.
+        return Document(content=[DocumentPart(root=TextPart(text=text))], metadata=metadata)
 
     @staticmethod
     def from_media(
@@ -102,7 +105,9 @@ class Document(DocumentData):
             A new Document instance containing a single media part.
         """
         return Document(
-            content=[DocumentPart(media=Media(url=url, content_type=content_type))],
+            # NOTE: DocumentPart is a RootModel requiring root=MediaPart(...) syntax.
+            # Using contentType alias for ty type checker compatibility.
+            content=[DocumentPart(root=MediaPart(media=Media(url=url, content_type=content_type)))],
             metadata=metadata,
         )
 
@@ -136,7 +141,7 @@ class Document(DocumentData):
             A single string containing the text from all text parts, joined
             without delimiters.
         """
-        return ''.join(p.root.text if p.root.text is not None else '' for p in self.content)
+        return ''.join(p.root.text for p in self.content if isinstance(p.root, TextPart))
 
     def media(self) -> list[Media]:
         """Retrieves all media parts from the document's content.
@@ -144,8 +149,9 @@ class Document(DocumentData):
         Returns:
             A list of Media objects contained within the document.
         """
-        media_parts = [part.root.media for part in self.content]
-        return list(filter(lambda m: m is not None, media_parts))
+        return [
+            part.root.media for part in self.content if isinstance(part.root, MediaPart) and part.root.media is not None
+        ]
 
     def data(self) -> str:
         """Gets the primary data content of the document.
@@ -207,7 +213,7 @@ class Document(DocumentData):
                     metadata = {}
                 metadata['embedMetadata'] = embedding.metadata
             documents.append(Document(content=content, metadata=metadata))
-        check_unique_documents(documents)
+        _ = check_unique_documents(documents)
         return documents
 
 

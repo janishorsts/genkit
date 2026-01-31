@@ -45,6 +45,7 @@ $HOME/go/bin/addlicense \
   -ignore '**/.dist/**/*' \
   -ignore '**/.eggs/**/*' \
   -ignore '**/.idea/**/*' \
+  -ignore '**/.nox/**/*' \
   -ignore '**/.mypy_cache/**/*' \
   -ignore '**/.next/**/*' \
   -ignore '**/.output/**/*' \
@@ -63,6 +64,7 @@ $HOME/go/bin/addlicense \
   -ignore '.trunk/**/*' \
   -ignore '**/*.toml' \
   -ignore '**/*.nix' \
+  -ignore '**/*.yaml' \
   "$TOP_DIR"
 
 uv run --directory "${PY_DIR}" liccheck

@@ -14,8 +14,12 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+
+"""Utility functions for OpenAI compatible models."""
+
 import json
 from collections.abc import Callable
+from typing import Any
 
 from genkit.types import (
     Message,
@@ -31,7 +35,7 @@ from genkit.types import (
 class DictMessageAdapter:
     """Adapter for dictionary-based chat message objects with OpenAI-compatible fields."""
 
-    def __init__(self, data: dict):
+    def __init__(self, data: dict) -> None:
         """Initializes the adapter with a dictionary.
 
         Args:
@@ -70,7 +74,7 @@ class DictMessageAdapter:
 class MessageAdapter:
     """Adapter for object-based chat message objects with OpenAI-compatible fields."""
 
-    def __init__(self, data: object):
+    def __init__(self, data: object) -> None:
         """Initializes the adapter with an object.
 
         Args:
@@ -112,8 +116,15 @@ ChatCompletionMessageAdapter = DictMessageAdapter | MessageAdapter
 class MessageConverter:
     """Converts between internal `Message` objects and OpenAI-compatible chat message dicts."""
 
-    _openai_role_map = {Role.MODEL: 'assistant'}
-    _genkit_role_map = {'assistant': Role.MODEL}
+    _openai_role_map: dict[Role, str] = {Role.MODEL: 'assistant'}
+    _genkit_role_map: dict[str, Role] = {'assistant': Role.MODEL}
+
+    @classmethod
+    def _get_openai_role(cls, role: Role | str) -> str:
+        """Convert a Role to its OpenAI string representation."""
+        if isinstance(role, Role):
+            return cls._openai_role_map.get(role, role.value)
+        return str(role)
 
     @classmethod
     def to_openai(cls, message: Message) -> list[dict]:
@@ -130,7 +141,7 @@ class MessageConverter:
         tool_messages = []
 
         for part in message.content:
-            root: Part = part.root
+            root = part.root
 
             if isinstance(root, TextPart):
                 text_parts.append(root.text)
@@ -148,7 +159,7 @@ class MessageConverter:
             elif isinstance(root, ToolResponsePart):
                 tool_call = root.tool_response
                 tool_messages.append({
-                    'role': cls._openai_role_map.get(message.role, message.role),
+                    'role': cls._get_openai_role(message.role),
                     'tool_call_id': tool_call.ref,
                     'content': str(tool_call.output),
                 })
@@ -157,13 +168,13 @@ class MessageConverter:
 
         if text_parts:
             result.append({
-                'role': cls._openai_role_map.get(message.role, message.role),
+                'role': cls._get_openai_role(message.role),
                 'content': ''.join(text_parts),
             })
 
         if tool_calls:
             result.append({
-                'role': cls._openai_role_map.get(message.role, message.role),
+                'role': cls._get_openai_role(message.role),
                 'tool_calls': tool_calls,
             })
 
@@ -203,7 +214,7 @@ class MessageConverter:
         Returns:
             A `Part` instance containing the text.
         """
-        return Part(text=content)
+        return Part(root=TextPart(text=content))
 
     @classmethod
     def tool_call_to_genkit(
@@ -219,13 +230,31 @@ class MessageConverter:
         Returns:
             A `Part` instance containing a `ToolRequest`.
         """
-        args_segment = args_segment if args_segment is not None else tool_call.function.arguments
-        args_segment = args_parser(args_segment) if args_parser else args_segment
+        # Get function info from tool_call (could be dict or object)
+        if hasattr(tool_call, 'function') and hasattr(tool_call, 'id'):
+            func = tool_call.function
+            tool_id = tool_call.id
+            func_name = func.name if hasattr(func, 'name') else ''
+            func_args = func.arguments if hasattr(func, 'arguments') else ''
+        else:
+            # Assume dict-like access
+            func = tool_call.get('function', {})  # type: ignore[attr-defined]
+            tool_id = tool_call.get('id', '')  # type: ignore[attr-defined]
+            func_name = func.get('name', '')
+            func_args = func.get('arguments', '')
+
+        # args can be str from streaming or parsed dict from args_parser
+        default_args = str(func_args) if func_args else ''
+        args_input: str | dict[str, Any] | None = args_segment if args_segment is not None else default_args
+        if args_parser and isinstance(args_input, str):
+            args_input = args_parser(args_input)
 
         return Part(
-            tool_request=ToolRequest(
-                ref=tool_call.id,
-                name=tool_call.function.name,
-                input=args_segment,
+            root=ToolRequestPart(
+                tool_request=ToolRequest(
+                    ref=str(tool_id) if tool_id else None,
+                    name=str(func_name) if func_name else '',
+                    input=args_input,
+                )
             )
         )

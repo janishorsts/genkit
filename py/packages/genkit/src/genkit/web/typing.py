@@ -34,40 +34,37 @@ from asgiref import typing as atyping
 
 try:
     import litestar  # type: ignore[misc]
-
-    HAVE_LITESTAR = True
+    import litestar.types  # type: ignore[misc]
 except ImportError:
-    HAVE_LITESTAR = False
-
+    litestar = None
 
 try:
-    import starlette
+    import starlette.types  # Explicit import for ty type checker
 
     # Import the actual application class
     from starlette.applications import Starlette as StarletteApp
-
-    HAVE_STARLETTE = True
 except ImportError:
-    HAVE_STARLETTE = False
+    starlette = None  # type: ignore[assignment]
+    StarletteApp = None  # type: ignore[assignment,misc]
 
 
 # NOTE: Please ask these frameworks to standardize on asgiref.
-if HAVE_LITESTAR and HAVE_STARLETTE:
-    Application = atyping.ASGIApplication | litestar.Litestar | StarletteApp
-    HTTPScope = atyping.HTTPScope | litestar.HTTPScope | starlette.types.Scope
-    LifespanScope = atyping.LifespanScope | litestar.LifespanScope | starlette.types.Scope
-    Receive = atyping.ASGIReceiveCallable | litestar.Receive | starlette.types.Scope
-    Scope = atyping.Scope | litestar.Scope | starlette.types.Scope
-    Send = atyping.ASGISendCallable | litestar.Send | starlette.types.Send
-elif HAVE_LITESTAR:
+if litestar is not None and starlette is not None:
+    Application = atyping.ASGIApplication | litestar.Litestar | StarletteApp  # pyright: ignore[reportOperatorIssue]
+    HTTPScope = atyping.HTTPScope | litestar.types.HTTPScope | starlette.types.Scope
+    LifespanScope = atyping.LifespanScope | litestar.types.LifeSpanScope | starlette.types.Scope
+    Receive = atyping.ASGIReceiveCallable | litestar.types.Receive | starlette.types.Scope
+    Scope = atyping.Scope | litestar.types.Scope | starlette.types.Scope
+    Send = atyping.ASGISendCallable | litestar.types.Send | starlette.types.Send
+elif litestar is not None:
     Application = atyping.ASGIApplication | litestar.Litestar
-    HTTPScope = atyping.HTTPScope | litestar.HTTPScope
-    LifespanScope = atyping.LifespanScope | litestar.LifespanScope
-    Receive = atyping.ASGIReceiveCallable | litestar.Receive
-    Scope = atyping.Scope | litestar.Scope
-    Send = atyping.ASGISendCallable | litestar.Send
-elif HAVE_STARLETTE:
-    Application = StarletteApp | atyping.ASGIApplication
+    HTTPScope = atyping.HTTPScope | litestar.types.HTTPScope
+    LifespanScope = atyping.LifespanScope | litestar.types.LifeSpanScope
+    Receive = atyping.ASGIReceiveCallable | litestar.types.Receive
+    Scope = atyping.Scope | litestar.types.Scope
+    Send = atyping.ASGISendCallable | litestar.types.Send
+elif starlette is not None:
+    Application = StarletteApp | atyping.ASGIApplication  # pyright: ignore[reportOptionalOperand]
     HTTPScope = atyping.HTTPScope | starlette.types.Scope
     LifespanScope = atyping.LifespanScope | starlette.types.Scope
     Receive = atyping.ASGIReceiveCallable | starlette.types.Receive
@@ -82,5 +79,8 @@ else:
     Send = atyping.ASGISendCallable
 
 # Type aliases for the web framework.
-# type LifespanHandler = Callable[[LifespanScope, Receive, Send], Awaitable[None]]
 LifespanHandler = Callable[[LifespanScope, Receive, Send], Awaitable[None]]
+
+# Type alias for Starlette/Litestar on_startup/on_shutdown handlers (0-argument async functions)
+# This is distinct from LifespanHandler which is the full ASGI lifespan protocol handler.
+StartupHandler = Callable[[], Awaitable[None]]

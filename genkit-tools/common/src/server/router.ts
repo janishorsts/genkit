@@ -27,6 +27,7 @@ import { GenkitToolsError, type RuntimeInfo } from '../manager/types';
 import { TraceDataSchema } from '../types';
 import type { Action } from '../types/action';
 import * as apis from '../types/apis';
+import { CancelActionRequestSchema } from '../types/apis';
 import type { EnvironmentVariable } from '../types/env';
 import * as evals from '../types/eval';
 import type { PromptFrontmatter } from '../types/prompt';
@@ -133,11 +134,11 @@ export const TOOLS_SERVER_ROUTER = (manager: RuntimeManager) =>
         return manager.listActions(input);
       }),
 
-    /** Runs an action. */
-    runAction: loggedProcedure
-      .input(apis.RunActionRequestSchema)
-      .mutation(async ({ input }) => {
-        return manager.runAction(input);
+    /** Retrieves all values. */
+    listValues: loggedProcedure
+      .input(apis.ListValuesRequestSchema)
+      .query(async ({ input }): Promise<Record<string, unknown>> => {
+        return manager.listValues(input);
       }),
 
     /** Generate a .prompt file from messages and model config. */
@@ -328,6 +329,13 @@ export const TOOLS_SERVER_ROUTER = (manager: RuntimeManager) =>
       await manager.processManager?.kill();
       return true;
     }),
+
+    /** Cancels a long-running action. */
+    cancelAction: loggedProcedure
+      .input(CancelActionRequestSchema)
+      .mutation(async ({ input }) => {
+        return manager.cancelAction(input);
+      }),
   });
 
 export type ToolsServerRouter = ReturnType<typeof TOOLS_SERVER_ROUTER>;

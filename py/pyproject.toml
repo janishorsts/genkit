@@ -1,20 +1,44 @@
+# Copyright 2025 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 [project]
+authors = [{ name = "Google" }]
 dependencies = [
-  "dotpromptz",
+  "dotpromptz==0.1.5",
   "genkit",
-  "genkit-plugin-dev-local-vectorstore",
+  "genkit-plugin-anthropic",
   "genkit-plugin-compat-oai",
+  "genkit-plugin-deepseek",
+  "genkit-plugin-dev-local-vectorstore",
+  "genkit-plugin-evaluators",
   "genkit-plugin-firebase",
   "genkit-plugin-flask",
-  "genkit-plugin-google-genai",
   "genkit-plugin-google-cloud",
+  "genkit-plugin-google-genai",
   "genkit-plugin-ollama",
   "genkit-plugin-vertex-ai",
+  "genkit-plugin-xai",
+  "genkit-plugin-mcp",
   "liccheck>=0.9.2",
+  "mcp>=1.25.0",
+  "python-multipart>=0.0.22",
   "strenum>=0.4.15; python_version < '3.11'",
 ]
 description = "Workspace for Genkit packages"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
 name = "genkit-workspace"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,10 +65,20 @@ dev = [
   "nox-uv>=0.2.2",
 ]
 
-lint = ["mypy>=1.15", "ruff>=0.9"]
+lint = [
+  "mypy>=1.14.0",
+  "pypdf>=6.6.2",
+  "pyrefly>=0.15.0",
+  "pyright>=1.1.392",
+  "strenum>=0.4.15",
+  "streamlit>=1.41.0",
+  "ty>=0.0.1",
+  "ruff>=0.9",
+  "pysentry-rs>=0.3.14",
+]
 
 [tool.hatch.build.targets.wheel]
-packages = []
+
 
 [tool.setuptools]
 py-modules = []
@@ -60,7 +94,7 @@ addopts = [
   "-vv",
 ]
 asyncio_default_fixture_loop_scope = "session"
-python_files = ["test_*.py", "*_test.py"]
+python_files = ["*_test.py"]
 testpaths = ["packages", "plugins", "samples", "tests"]
 #asyncio_mode = "auto"
 asyncio_mode = "strict"
@@ -76,27 +110,36 @@ omit = [
   "**/typing.py",    # Often auto-generated or complex types
   "**/types.py",     # Often auto-generated or complex types
 ]
+source = ["packages", "plugins"]
 
 # uv based package management.
 [tool.uv]
 default-groups = ["dev", "lint"]
 
 [tool.uv.sources]
-dotpromptz                          = { git = "https://github.com/google/dotprompt.git", subdirectory = "python/dotpromptz", rev = "main" }
+evaluator-demo                      = { workspace = true }
 genkit                              = { workspace = true }
+genkit-plugin-anthropic             = { workspace = true }
 genkit-plugin-compat-oai            = { workspace = true }
+genkit-plugin-deepseek              = { workspace = true }
 genkit-plugin-dev-local-vectorstore = { workspace = true }
+genkit-plugin-evaluators            = { workspace = true }
 genkit-plugin-firebase              = { workspace = true }
 genkit-plugin-flask                 = { workspace = true }
 genkit-plugin-google-cloud          = { workspace = true }
 genkit-plugin-google-genai          = { workspace = true }
+genkit-plugin-mcp                   = { workspace = true }
 genkit-plugin-ollama                = { workspace = true }
 genkit-plugin-vertex-ai             = { workspace = true }
+genkit-plugin-xai                   = { workspace = true }
 google-genai-hello                  = { workspace = true }
 google-genai-image                  = { workspace = true }
+prompt-demo                         = { workspace = true }
 
 [tool.uv.workspace]
+exclude = ["*/shared"]
 members = ["packages/*", "plugins/*", "samples/*"]
+
 
 # Ruff checks and formatting.
 [tool.ruff]
@@ -132,7 +175,7 @@ exclude = [
 indent-width = 4
 line-length = 120
 preview = true
-target-version = "py311" # NOTE: Keep this at 3.11 not 3.10. We use backported libs for enums.
+target-version = "py310"
 unsafe-fixes = true
 
 
@@ -147,10 +190,20 @@ select = [
   "B",    # flake8-bugbear (common bugs)
   "N",    # pep8-naming (naming conventions)
   "D",    # pydocstyle
+  "ANN",  # flake8-annotations (type hints)
   "F401", # unused imports
   "F403", # wildcard imports
   "F841", # unused variables
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# Typing tests use reveal_type(), intentional unused vars, and don't need docstrings
+"packages/genkit/tests/typing/*.py" = ["D", "F821", "F841", "B018", "ANN"]
+# Samples have install_rich_traceback() call after imports, before other code
+# This is intentional for proper exception handling
+"samples/*/*.py"     = ["E402"]
+"samples/*/**/*.py"  = ["E402"]
+"samples/*/src/*.py" = ["E402"]
 
 [tool.ruff.lint.isort]
 combine-as-imports = true
@@ -174,29 +227,6 @@ indent-style               = "space"
 line-ending                = "lf"
 quote-style                = "single"
 skip-magic-trailing-comma  = false
-
-# Static type checking.
-[tool.mypy]
-disallow_incomplete_defs = true
-disallow_untyped_defs = true
-exclude = ["samples/"]
-explicit_package_bases = true
-mypy_path = [
-  "packages/genkit/src",
-  "plugins/chroma/src",
-  "plugins/compat-oai/src",
-  "plugins/dev-local-vectorstore/src",
-  "plugins/firebase/src",
-  "plugins/flask/src",
-  "plugins/google-cloud/src",
-  "plugins/google-genai/src",
-  "plugins/ollama/src",
-  "plugins/pinecone/src",
-  "plugins/vertex-ai/src",
-]
-namespace_packages = true
-strict = true
-warn_unused_configs = true
 
 [tool.datamodel-codegen]
 #collapse-root-models = true # Don't use; produces Any as types.
@@ -243,6 +273,9 @@ authorized_licenses = [
   "python software foundation license",
   "simplified bsd",
   "the unlicense (unlicense)",          # TODO: verify.
+  "bsd-2-clause",
+  "apache license 2.0",
+  "apache-2.0 and mit",
 ]
 dependencies = true
 unauthorized_licenses = [
@@ -254,6 +287,108 @@ unauthorized_licenses = [
 ]
 
 [tool.liccheck.authorized_packages]
-certifi      = "2025.4.26" # TODO: Verify.
-dependencies = true
-ollama       = "0.5.1"     # MIT "https://github.com/ollama/ollama-python/blob/main/LICENSE"
+aiohappyeyeballs      = "2.6.1"    # Python Software Foundation (transitive dep of xai-sdk)
+aiohttp               = "3.13.3"   # Apache-2.0 AND MIT (transitive dep of xai-sdk)
+certifi               = "2026.1.4" # TODO: Verify.
+dependencies          = true
+dotpromptz-handlebars = "0.1.8"    # Apache-2.0 "https://github.com/google/dotprompt/blob/main/LICENSE"
+google-crc32c         = "1.8.0"    # Apache-2.0
+multidict             = "6.7.0"    # Apache-2.0
+ollama                = "0.5.1"    # MIT "https://github.com/ollama/ollama-python/blob/main/LICENSE"
+pyasn1                = "0.6.2"    # BSD-2-Clause
+
+# Ty (Astral/Ruff) type checking configuration.
+# See: https://docs.astral.sh/ty/modules/#first-party-modules
+[tool.ty.environment]
+root = [
+  # Core package
+  "packages/genkit/src",
+  # Plugins
+  "plugins/anthropic/src",
+  "plugins/compat-oai/src",
+  "plugins/deepseek/src",
+  "plugins/dev-local-vectorstore/src",
+  "plugins/evaluators/src",
+  "plugins/firebase/src",
+  "plugins/flask/src",
+  "plugins/google-cloud/src",
+  "plugins/google-genai/src",
+  "plugins/mcp/src",
+  "plugins/ollama/src",
+  "plugins/vertex-ai/src",
+  "plugins/xai/src",
+  # Samples
+  ".",                      # For samples.shared imports
+  "samples/evaluator-demo", # For evaluator_demo package imports
+]
+
+# Pyright type checking configuration.
+[tool.pyright]
+exclude = [
+  "**/__pycache__",
+  ".git",
+  ".mypy_cache",
+  ".nox",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".tox",
+  "build",
+  "dist",
+]
+# Use the venv where packages are installed as editable installs
+pythonVersion          = "3.10"
+reportMissingImports   = true
+reportMissingTypeStubs = false
+typeCheckingMode       = "basic"
+venv                   = ".venv"
+venvPath               = "."
+
+# Pyrefly type checking configuration (Meta's new type checker).
+#
+# Import Resolution Note:
+# Pyrefly doesn't fully support PEP 420 namespace packages. The genkit plugins use
+# namespace packages (genkit.plugins.*) where intermediate directories (genkit/ and
+# genkit/plugins/) don't have __init__.py files. This is intentional for allowing
+# multiple packages to contribute to the same namespace, but pyrefly can't resolve
+# these imports statically. We use ignore-missing-imports for "genkit.plugins.*" to
+# suppress false positive import errors while still catching real type errors.
+# At runtime, these imports work correctly because Python's import system handles
+# PEP 420 namespace packages natively.
+[tool.pyrefly]
+project_excludes = [
+  "**/__pycache__",
+  ".git",
+  ".mypy_cache",
+  ".nox",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".tox",
+  ".venv",
+  "build",
+  "dist",
+]
+project_includes = [
+  # Core package (source and tests)
+  "packages/genkit/src/**/*.py",
+  "packages/genkit/tests/**/*.py",
+  # Plugins (source and tests)
+  "plugins/*/src/**/*.py",
+  "plugins/*/tests/**/*.py",
+  # Samples
+  "samples/*/src/**/*.py",
+  "samples/evaluator-demo/evaluator_demo/**/*.py",
+]
+# Search path for first-party code import resolution.
+# The project root "." covers all packages. Additional paths are needed for:
+# - plugins/mcp/tests: has a local `fakes` module for test mocks
+# - samples/evaluator-demo: has `evaluator_demo` package with internal imports
+search-path = [".", "plugins/mcp/tests", "samples/evaluator-demo"]
+# Ignore missing imports for namespace packages - pyrefly can't resolve PEP 420
+# namespace packages but these imports work at runtime
+ignore-missing-imports = ["genkit.plugins.*"]
+python_version         = "3.10"
+
+# Treat warnings as errors.
+[tool.pyrefly.errors]
+deprecated     = "error"
+redundant-cast = "error"
