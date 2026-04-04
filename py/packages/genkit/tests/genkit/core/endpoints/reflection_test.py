@@ -36,16 +36,18 @@ each endpoint's behavior.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any, cast
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from genkit.core.reflection import create_reflection_asgi_app
-from genkit.core.registry import Registry
+from genkit._core._action import ActionKind, ActionMetadata
+from genkit._core._reflection import create_reflection_asgi_app
+from genkit._core._registry import Registry
 
 
 @pytest.fixture
@@ -65,7 +67,7 @@ async def asgi_client(mock_registry: MagicMock) -> AsyncIterator[AsyncClient]:
         An AsyncClient configured to make requests to the test ASGI app.
     """
     app = create_reflection_asgi_app(mock_registry)
-    transport = ASGITransport(app=app)  # type: ignore[arg-type]
+    transport = ASGITransport(app=app)
     client = AsyncClient(transport=transport, base_url='http://test')
     try:
         yield client
@@ -83,8 +85,6 @@ async def test_health_check(asgi_client: AsyncClient) -> None:
 @pytest.mark.asyncio
 async def test_list_actions(asgi_client: AsyncClient, mock_registry: MagicMock) -> None:
     """Test that the actions list endpoint returns registered actions."""
-    from genkit.core.action import ActionMetadata
-    from genkit.core.action.types import ActionKind
 
     # Mock the async list_actions method to return a list of ActionMetadata
     async def mock_list_actions_async(allowed_kinds: list[ActionKind] | None = None) -> list[ActionMetadata]:
@@ -95,7 +95,12 @@ async def test_list_actions(asgi_client: AsyncClient, mock_registry: MagicMock) 
             )
         ]
 
+    # Mock resolve_actions_by_kind to return empty dict (no registered actions in this test)
+    async def mock_resolve_actions_by_kind(kind: ActionKind) -> dict:
+        return {}
+
     mock_registry.list_actions = mock_list_actions_async
+    mock_registry.resolve_actions_by_kind = mock_resolve_actions_by_kind
     response = await asgi_client.get('/api/actions')
     assert response.status_code == 200
     result = response.json()
@@ -134,7 +139,20 @@ async def test_run_action_standard(asgi_client: AsyncClient, mock_registry: Magi
     mock_output = MagicMock()
     mock_output.response = {'result': 'success'}
     mock_output.trace_id = 'test_trace_id'
-    mock_action.arun_raw.return_value = mock_output
+    mock_output.span_id = 'test_span_id'
+
+    async def side_effect(
+        input: object = None,
+        on_chunk: object | None = None,
+        context: object | None = None,
+        on_trace_start: Callable[[str, str], None] | None = None,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> MagicMock:
+        if on_trace_start:
+            on_trace_start('test_trace_id', 'test_span_id')
+        return mock_output
+
+    mock_action.run.side_effect = side_effect
 
     async def mock_resolve_action_by_key(key: str) -> AsyncMock:
         return mock_action
@@ -148,7 +166,16 @@ async def test_run_action_standard(asgi_client: AsyncClient, mock_registry: Magi
     assert 'result' in response_data
     assert 'telemetry' in response_data
     assert response_data['telemetry']['traceId'] == 'test_trace_id'
-    mock_action.arun_raw.assert_called_once_with(raw_input={'data': 'test'}, context={}, on_trace_start=ANY)
+    assert response_data['telemetry']['spanId'] == 'test_span_id'
+    assert response.headers['X-Genkit-Trace-Id'] == 'test_trace_id'
+    assert response.headers['X-Genkit-Span-Id'] == 'test_span_id'
+    mock_action.run.assert_called_once_with(
+        input={'data': 'test'},
+        context={},
+        on_trace_start=ANY,
+        on_chunk=None,
+        telemetry_labels=None,
+    )
 
 
 @pytest.mark.asyncio
@@ -158,7 +185,8 @@ async def test_run_action_with_context(asgi_client: AsyncClient, mock_registry: 
     mock_output = MagicMock()
     mock_output.response = {'result': 'success'}
     mock_output.trace_id = 'test_trace_id'
-    mock_action.arun_raw.return_value = mock_output
+    mock_output.span_id = 'test_span_id'
+    mock_action.run.return_value = mock_output
 
     async def mock_resolve_action_by_key(key: str) -> AsyncMock:
         return mock_action
@@ -175,30 +203,32 @@ async def test_run_action_with_context(asgi_client: AsyncClient, mock_registry: 
     )
 
     assert response.status_code == 200
-    mock_action.arun_raw.assert_called_once_with(
-        raw_input={'data': 'test'},
+    mock_action.run.assert_called_once_with(
+        input={'data': 'test'},
         context={'user': 'test_user'},
         on_trace_start=ANY,
+        on_chunk=None,
+        telemetry_labels=None,
     )
 
 
 @pytest.mark.asyncio
-@patch('genkit.core.reflection.is_streaming_requested')
 async def test_run_action_streaming(
-    mock_is_streaming: MagicMock,
     asgi_client: AsyncClient,
     mock_registry: MagicMock,
 ) -> None:
     """Test that streaming actions work correctly."""
-    mock_is_streaming.return_value = True
     mock_action = AsyncMock()
 
     async def mock_streaming(
-        raw_input: object,
+        input: object = None,
         on_chunk: object | None = None,
         context: object | None = None,
+        on_trace_start: Callable[[str, str], None] | None = None,
         **kwargs: Any,  # noqa: ANN401
     ) -> MagicMock:
+        if on_trace_start:
+            on_trace_start('stream_trace_id', 'stream_span_id')
         if on_chunk:
             on_chunk_fn = cast(Callable[[object], Awaitable[None]], on_chunk)
             await on_chunk_fn({'chunk': 1})
@@ -206,9 +236,10 @@ async def test_run_action_streaming(
         mock_output = MagicMock()
         mock_output.response = {'final': 'result'}
         mock_output.trace_id = 'stream_trace_id'
+        mock_output.span_id = 'stream_span_id'
         return mock_output
 
-    mock_action.arun_raw.side_effect = mock_streaming
+    mock_action.run.side_effect = mock_streaming
     mock_registry.resolve_action_by_key.return_value = mock_action
 
     response = await asgi_client.post(
@@ -217,4 +248,64 @@ async def test_run_action_streaming(
     )
 
     assert response.status_code == 200
-    assert mock_is_streaming.called
+    assert response.headers['X-Genkit-Trace-Id'] == 'stream_trace_id'
+    assert response.headers['X-Genkit-Span-Id'] == 'stream_span_id'
+
+
+@pytest.mark.parametrize(
+    'chunks, expected_lines',
+    [
+        (['string chunk 1', 'string chunk 2'], ['"string chunk 1"', '"string chunk 2"']),
+        ([123, 456], ['123', '456']),
+        ([12.3, 45.6], ['12.3', '45.6']),
+        ([True, False], ['true', 'false']),
+        ([None], ['null']),
+        ([{'key': 'value'}], ['{"key": "value"}']),
+    ],
+)
+@pytest.mark.asyncio
+async def test_run_action_streaming_primitive_types(
+    asgi_client: AsyncClient,
+    mock_registry: MagicMock,
+    chunks: list[Any],
+    expected_lines: list[str],
+) -> None:
+    """Test that streaming actions with primitive type chunks work correctly."""
+    mock_action = AsyncMock()
+
+    async def mock_streaming(
+        input: object = None,
+        on_chunk: object | None = None,
+        context: object | None = None,
+        on_trace_start: Callable[[str, str], None] | None = None,
+        **kwargs: Any,  # noqa: ANN401
+    ) -> MagicMock:
+        if on_trace_start:
+            on_trace_start('stream_trace_id', 'stream_span_id')
+        if on_chunk:
+            on_chunk_fn = cast(Callable[[object], None], on_chunk)
+            for chunk in chunks:
+                on_chunk_fn(chunk)
+        mock_output = MagicMock()
+        mock_output.response = {'final': 'result'}
+        mock_output.trace_id = 'stream_trace_id'
+        mock_output.span_id = 'stream_span_id'
+        return mock_output
+
+    mock_action.run.side_effect = mock_streaming
+    mock_registry.resolve_action_by_key.return_value = mock_action
+
+    response = await asgi_client.post(
+        '/api/runAction?stream=true',
+        json={'key': 'test_action', 'input': {'data': 'test'}},
+    )
+
+    assert response.status_code == 200
+    assert response.headers['X-Genkit-Trace-Id'] == 'stream_trace_id'
+    assert response.headers['X-Genkit-Span-Id'] == 'stream_span_id'
+
+    lines = response.text.strip().split('\n')
+    assert lines[:-1] == expected_lines
+
+    final_result = json.loads(lines[-1])
+    assert final_result['result'] == {'final': 'result'}

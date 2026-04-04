@@ -15,7 +15,7 @@
  */
 
 import type { JSONSchema7 } from 'json-schema';
-import type * as z from 'zod';
+import * as z from 'zod';
 import { getAsyncContext } from './async-context.js';
 import { lazy } from './async.js';
 import { getContext, runWithContext, type ActionContext } from './context.js';
@@ -52,6 +52,7 @@ export interface ActionMetadata<
   S extends z.ZodTypeAny = z.ZodTypeAny,
 > {
   actionType?: ActionType;
+  key?: string;
   name: string;
   description?: string;
   inputSchema?: I;
@@ -61,6 +62,19 @@ export interface ActionMetadata<
   streamSchema?: S;
   metadata?: Record<string, any>;
 }
+
+export const ActionMetadataSchema = z.object({
+  key: z.string().optional(),
+  actionType: z.string().optional(),
+  name: z.string(),
+  description: z.string().optional(),
+  inputSchema: z.unknown().optional(),
+  inputJsonSchema: z.object({}).optional(),
+  outputSchema: z.unknown().optional(),
+  outputJsonSchema: z.object({}).optional(),
+  streamSchema: z.unknown().optional(),
+  metadata: z.record(z.string(), z.any()).optional(),
+});
 
 /**
  * Results of an action run. Includes telemetry.
@@ -337,6 +351,7 @@ export function action<
     });
     let traceId;
     let spanId;
+    const genkitKey = actionFn.__action.key;
     let output = await runInNewSpan(
       {
         metadata: {
@@ -345,6 +360,7 @@ export function action<
         labels: {
           [SPAN_TYPE_ATTR]: 'action',
           'genkit:metadata:subtype': config.actionType,
+          ...(genkitKey ? { 'genkit:key': genkitKey } : {}),
           ...options?.telemetryLabels,
         },
       },
